@@ -1,22 +1,24 @@
+import { ICON_MAP } from "@/constants/ICON_MAP";
+import { INTERVAL_OPTIONS } from "@/constants/INTERVAL_OPTIONS";
+import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  Platform,
   Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  Alert,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { ICON_MAP } from "@/constants/ICON_MAP";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ICON_OPTIONS = Object.values(ICON_MAP);
 const COLOR_OPTIONS = ["#4a90e2", "#f5a623", "#50e3c2", "#e94e77", "#9013fe"];
-const INTERVAL_OPTIONS = [6, 8, 12, 24];
 
 export default function MedicineDetails() {
   const params = useLocalSearchParams<{
@@ -75,6 +77,61 @@ export default function MedicineDetails() {
     setShowDateModal(false);
   };
   const cancelDateIOS = () => setShowDateModal(false);
+
+  /** ======== Сохранение изменений ======== */
+  const saveMedicine = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("medicines");
+      const meds: any[] = saved ? JSON.parse(saved) : [];
+
+      const updated = meds.map((m) =>
+        m.id === params.id
+          ? {
+              ...m,
+              title,
+              dose,
+              startDate: startDate.toISOString(),
+              days,
+              interval: interval.toString(),
+              color: selectedColor,
+              iconId: selectedIcon,
+            }
+          : m
+      );
+
+      await AsyncStorage.setItem("medicines", JSON.stringify(updated));
+      Alert.alert("✅ Изменения сохранены");
+      router.back();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  /** ======== Удаление лекарства ======== */
+  const deleteMedicine = async () => {
+    Alert.alert("Удаление", "Вы уверены, что хотите удалить это лекарство?", [
+      { text: "Отмена", style: "cancel" },
+      {
+        text: "Удалить",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const saved = await AsyncStorage.getItem("medicines");
+            if (!saved) return;
+
+            const meds: any[] = JSON.parse(saved);
+            const filtered = meds.filter((m) => m.id !== params.id);
+
+            await AsyncStorage.setItem("medicines", JSON.stringify(filtered));
+            Alert.alert("✅ Лекарство удалено");
+            router.back();
+          } catch (e) {
+            console.error(e);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <ScrollView
@@ -197,12 +254,20 @@ export default function MedicineDetails() {
       {/* Кнопки */}
       <TouchableOpacity
         style={[styles.button, { backgroundColor: selectedColor }]}
-        onPress={() => router.back()}
+        onPress={saveMedicine}
       >
         <Text style={styles.buttonText}>Сохранить</Text>
       </TouchableOpacity>
+
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: "#ccc", marginTop: 12, marginBottom: 80 }]}
+        style={[styles.button, { backgroundColor: "#f44336", marginTop: 12, marginBottom: 20 }]}
+        onPress={deleteMedicine}
+      >
+        <Text style={[styles.buttonText, { color: "#fff" }]}>Удалить лекарство</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: "#ccc", marginBottom: 80 }]}
         onPress={() => router.back()}
       >
         <Text style={[styles.buttonText, { color: "#333" }]}>Отмена</Text>

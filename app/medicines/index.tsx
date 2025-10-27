@@ -1,6 +1,7 @@
-import { router } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { FlatList, StyleSheet, Text, View, TouchableOpacity } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, useFocusEffect } from "expo-router";
 import MedicationItem from "@/components/MedicationItem";
 
 export type Item = {
@@ -14,33 +15,38 @@ export type Item = {
   color?: string;
 };
 
-const data: Item[] = [
-  { id: "1", iconId: "1", title: "Аспирин", dose: "100мг", startDate: "2025-10-20" },
-  { id: "2", iconId: "2", title: "Пластырь", dose: "1 шт", startDate: "2025-10-21" },
-];
-
 const Medicines = () => {
+  const [data, setData] = useState<Item[]>([]);
+
+  const loadMedicines = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("medicines");
+      if (saved) setData(JSON.parse(saved));
+    } catch (e) {
+      console.error("Ошибка при загрузке лекарств", e);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadMedicines();
+    }, [])
+  );
+
   const handlePress = (item: Item) => {
     router.push({
-      pathname: "/medicines/[id]", // ✅ именно имя файла
-      params: {
-        id: item.id,
-        title: item.title,
-        dose: item.dose ?? "",
-        startDate: item.startDate ?? "",
-        days: item.days ?? "",
-        interval: item.interval ?? "",
-        color: item.color ?? "#4a90e2",
-        iconId: item.iconId ?? "",
-      },
+      pathname: "/medicines/[id]",
+      params: item,
     });
   };
 
-  const renderItem = ({ item }: { item: Item }) => (
-    <TouchableOpacity onPress={() => handlePress(item)}>
-      <MedicationItem iconId={item.iconId} title={item.title} />
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }: { item: Item }) => {
+    return (
+      <TouchableOpacity onPress={() => handlePress(item)}>
+        <MedicationItem iconId={item.iconId} title={item.title} color={item.color} />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -51,6 +57,11 @@ const Medicines = () => {
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListEmptyComponent={
+            <Text style={{ textAlign: "center", padding: 20, color: "#888" }}>
+              Нет добавленных лекарств
+            </Text>
+          }
         />
       </View>
     </View>
@@ -79,7 +90,7 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: 1,
-    backgroundColor: "#554c4c",
+    backgroundColor: "#ddd",
     width: "100%",
   },
 });

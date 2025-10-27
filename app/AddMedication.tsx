@@ -9,9 +9,13 @@ import {
   Modal,
   Platform,
   Animated,
+  Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { router } from "expo-router";
+import { INTERVAL_OPTIONS } from "@/constants/INTERVAL_OPTIONS";
 
 const ICON_OPTIONS = [
   "medkit-outline",
@@ -21,22 +25,20 @@ const ICON_OPTIONS = [
   "heart-outline",
 ];
 const COLOR_OPTIONS = ["#4a90e2", "#f5a623", "#50e3c2", "#e94e77", "#9013fe"];
-const INTERVAL_OPTIONS = [6, 8, 12, 24];
 
 export default function AddMedication() {
   const [name, setName] = useState("");
   const [dose, setDose] = useState("");
   const [startDate, setStartDate] = useState(new Date());
   const [tempDate, setTempDate] = useState(new Date());
-  const [showDateModal, setShowDateModal] = useState(false); // iOS
-  const [showDatePicker, setShowDatePicker] = useState(false); // Android дата
-  const [showTimePicker, setShowTimePicker] = useState(false); // Android время
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [days, setDays] = useState("");
   const [interval, setInterval] = useState<number>(INTERVAL_OPTIONS[0]);
   const [selectedColor, setSelectedColor] = useState(COLOR_OPTIONS[0]);
   const [selectedIcon, setSelectedIcon] = useState(ICON_OPTIONS[0]);
 
-  // Анимация для иконок
   const scaleAnim = useRef<Animated.Value[]>(ICON_OPTIONS.map(() => new Animated.Value(1))).current;
 
   useEffect(() => {
@@ -49,7 +51,49 @@ export default function AddMedication() {
     });
   }, [selectedIcon]);
 
-  /** ================= Выбор даты ================= */
+  /** ======== Добавление лекарства ======== */
+  const saveMedication = async () => {
+    if (!name.trim()) {
+      Alert.alert("Ошибка", "Введите название лекарства");
+      return;
+    }
+
+    const newMedication = {
+      id: Date.now().toString(),
+      title: name,
+      dose,
+      startDate: startDate.toISOString(),
+      days,
+      interval: String(interval),
+      color: selectedColor,
+      iconId: selectedIcon,
+    };
+
+    try {
+      const existingData = await AsyncStorage.getItem("medicines");
+      const meds = existingData ? JSON.parse(existingData) : [];
+      meds.push(newMedication);
+      await AsyncStorage.setItem("medicines", JSON.stringify(meds));
+
+      Alert.alert("✅ Успешно", "Лекарство добавлено");
+
+      // ✅ Очистка всех полей
+      setName("");
+      setDose("");
+      setDays("");
+      setInterval(INTERVAL_OPTIONS[0]);
+      setSelectedColor(COLOR_OPTIONS[0]);
+      setSelectedIcon(ICON_OPTIONS[0]);
+      setStartDate(new Date());
+
+      router.push("/medicines");
+    } catch (e) {
+      Alert.alert("Ошибка", "Не удалось сохранить лекарство");
+      console.error(e);
+    }
+  };
+
+  /** ======== Работа с датой ======== */
   const openDateTimePicker = () => {
     if (Platform.OS === "ios") {
       setTempDate(startDate);
@@ -59,16 +103,14 @@ export default function AddMedication() {
     }
   };
 
-  // Android: выбор даты
   const onChangeDate = (event: DateTimePickerEvent, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
       setStartDate(selectedDate);
-      setShowTimePicker(true); // открыть выбор времени
+      setShowTimePicker(true);
     }
   };
 
-  // Android: выбор времени
   const onChangeTime = (event: DateTimePickerEvent, selectedTime?: Date) => {
     setShowTimePicker(false);
     if (selectedTime) {
@@ -78,13 +120,11 @@ export default function AddMedication() {
     }
   };
 
-  // iOS: подтвердить
   const confirmDateIOS = () => {
     setStartDate(tempDate);
     setShowDateModal(false);
   };
 
-  // iOS: отмена
   const cancelDateIOS = () => {
     setShowDateModal(false);
   };
@@ -156,7 +196,7 @@ export default function AddMedication() {
         onChangeText={setDose}
       />
 
-      {/* Дата и время */}
+      {/* Дата */}
       <Text style={styles.label}>Дата и время начала</Text>
       <TouchableOpacity style={styles.input} onPress={openDateTimePicker}>
         <Text>{startDate.toLocaleString()}</Text>
@@ -173,7 +213,6 @@ export default function AddMedication() {
                 display="spinner"
                 onChange={(e, date) => date && setTempDate(date)}
                 is24Hour={true}
-                themeVariant="light" // текст всегда виден
               />
               <View style={styles.buttonRow}>
                 <TouchableOpacity
@@ -232,7 +271,10 @@ export default function AddMedication() {
       </View>
 
       {/* Сохранить */}
-      <TouchableOpacity style={[styles.button, { backgroundColor: selectedColor }]}>
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: selectedColor }]}
+        onPress={saveMedication}
+      >
         <Text style={styles.buttonText}>Сохранить</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -252,16 +294,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#fafafa",
   },
-  intervalContainer: { flexDirection: "row", marginTop: 8 },
-  intervalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    marginRight: 12,
-  },
-  intervalText: { fontSize: 16, color: "#333" },
   colorContainer: { flexDirection: "row", marginTop: 8 },
   colorCircle: {
     width: 36,
@@ -273,24 +305,16 @@ const styles = StyleSheet.create({
   },
   selectedColor: { borderColor: "#333" },
   iconContainer: { flexDirection: "row", marginTop: 8 },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 2,
+  intervalContainer: { flexDirection: "row", marginTop: 8 },
+  intervalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: "#ddd",
-    justifyContent: "center",
-    alignItems: "center",
     marginRight: 12,
-    backgroundColor: "#fff",
   },
-  selectedIconBox: {
-    backgroundColor: "#4a90e2",
-    borderColor: "#4a90e2",
-    transform: "scale(1.2)",
-    transformOrigin: "all",
-    transitionDuration: "3s",
-  },
+  intervalText: { fontSize: 16, color: "#333" },
   button: {
     marginTop: 32,
     paddingVertical: 14,
@@ -299,8 +323,6 @@ const styles = StyleSheet.create({
     marginBottom: 80,
   },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-
-  /** iOS Modal */
   modalBackground: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContainer: {
     backgroundColor: "#fff",

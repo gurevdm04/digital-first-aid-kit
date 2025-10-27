@@ -7,16 +7,15 @@ type MedicationCardProps = {
   iconId: string;
   title: string;
   time: string;
+  color: string | undefined;
 };
 
-const MedicationCard = ({ iconId, title, time }: MedicationCardProps) => {
-  const iconName = ICON_MAP[iconId] ?? "help-circle-outline";
-
+const MedicationCard = ({ iconId, title, time, color }: MedicationCardProps) => {
   return (
     <View style={styles.card}>
       {/* Левая часть — иконка */}
       <View style={styles.iconContainer}>
-        <Ionicons name={iconName} size={28} color="#4a90e2" />
+        <Ionicons name={iconId as any} size={28} color={color ? color : "#4a90e2"} />
       </View>
 
       {/* Правая часть — текст */}

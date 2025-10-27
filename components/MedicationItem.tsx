@@ -6,16 +6,17 @@ import { View, Text, StyleSheet } from "react-native";
 type MedicationItemProps = {
   iconId: string;
   title: string;
+  color: string | undefined;
 };
 
-const MedicationItem = ({ iconId, title }: MedicationItemProps) => {
+const MedicationItem = ({ iconId, title, color }: MedicationItemProps) => {
   const iconName = ICON_MAP[iconId] ?? "help-circle-outline";
 
   return (
     <View style={styles.card}>
       {/* Левая часть — иконка */}
       <View style={styles.iconContainer}>
-        <Ionicons name={iconName} size={28} color="#4a90e2" />
+        <Ionicons name={iconId as any} size={28} color={color ? color : "#4a90e2"} />
       </View>
 
       {/* Средняя часть — текст */}

@@ -1,168 +1,160 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Modal } from "react-native";
+import React, { useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  Alert,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 
 type Medication = {
   id: string;
-  name: string;
-  time: string;
-  icon: string;
+  title: string;
+  startDate: string;
+  iconId: string;
+  status?: "pending" | "taken" | "missed";
 };
 
-const data: Medication[] = [
-  { id: "1", name: "Аспирин", time: "08:00", icon: "medkit-outline" },
-  { id: "2", name: "Витамины", time: "12:00", icon: "medkit-outline" },
-  { id: "3", name: "Антибиотик", time: "20:00", icon: "medkit-outline" },
-];
-
 export default function History() {
-  const [currentWeek, setCurrentWeek] = useState(new Date());
-  const [modalVisible, setModalVisible] = useState(false);
-  const [asNeededModalVisible, setAsNeededModalVisible] = useState(false);
+  const [data, setData] = useState<Medication[]>([]);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  const prevWeek = () => {
-    const d = new Date(currentWeek);
-    d.setDate(d.getDate() - 7);
-    setCurrentWeek(d);
+  /** ======== Загрузка истории ======== */
+  const loadHistory = async () => {
+    try {
+      const saved = await AsyncStorage.getItem("medicines");
+      if (!saved) return;
+      const meds: Medication[] = JSON.parse(saved);
+
+      // Отбираем только принятые лекарства
+      const takenMeds = meds.filter((m) => m.status === "taken");
+
+      // Сортируем по дате
+      takenMeds.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+      setData(takenMeds);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const nextWeek = () => {
-    const d = new Date(currentWeek);
-    d.setDate(d.getDate() + 7);
-    setCurrentWeek(d);
-  };
+  // Перерендер при возврате на экран
+  useFocusEffect(
+    useCallback(() => {
+      loadHistory();
+    }, [])
+  );
 
-  const formatWeek = (date: Date) => {
-    const start = new Date(date);
-    const end = new Date(date);
-    start.setDate(start.getDate() - start.getDay()); // воскресенье
-    end.setDate(start.getDate() + 6); // суббота
-    return `${start.getDate()}-${end.getDate()} ${start.toLocaleString("ru-RU", {
-      month: "long",
-    })} ${start.getFullYear()}г.`;
-  };
-
-  const openEditModal = (med: Medication) => {
+  /** ======== Модальное окно ======== */
+  const openModal = (med: Medication) => {
     setSelectedMedication(med);
     setModalVisible(true);
   };
 
-  const openAsNeededModal = () => {
-    setAsNeededModalVisible(true);
+  const closeModal = () => setModalVisible(false);
+
+  /** ======== Изменение статуса ======== */
+  const updateStatus = async (status: "taken" | "missed") => {
+    if (!selectedMedication) return;
+
+    try {
+      const saved = await AsyncStorage.getItem("medicines");
+      if (!saved) return;
+      const meds: Medication[] = JSON.parse(saved);
+
+      const updated = meds.map((m) =>
+        m.id === selectedMedication.id ? { ...m, status } : m
+      );
+
+      await AsyncStorage.setItem("medicines", JSON.stringify(updated));
+      Alert.alert("✅", `Статус изменен на "${status === "taken" ? "Принято" : "Пропущено"}"`);
+
+      setSelectedMedication({ ...selectedMedication, status });
+      loadHistory();
+      closeModal();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const selectMedication = (med: Medication) => {
-    console.log("Выбрано лекарство по мере необходимости:", med.name);
-    setAsNeededModalVisible(false);
+  /** ======== Рендер лекарства ======== */
+  const renderItem = ({ item }: { item: Medication }) => {
+    return (
+      <TouchableOpacity style={styles.card} onPress={() => openModal(item)}>
+        <Ionicons name="medkit-outline" size={36} color="#4caf50" style={styles.icon} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>{item.title}</Text>
+          <Text style={styles.time}>{new Date(item.startDate).toLocaleTimeString()}</Text>
+        </View>
+        <Text style={{ color: "#4caf50", fontWeight: "600" }}>Принято</Text>
+      </TouchableOpacity>
+    );
   };
-
-  const renderItem = ({ item }: { item: Medication }) => (
-    <TouchableOpacity style={styles.card} onPress={() => openEditModal(item)}>
-      <Ionicons name={item.icon as any} size={36} color="#4a90e2" style={styles.icon} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.time}>{item.time}</Text>
-      </View>
-      <Ionicons name="pencil-outline" size={20} color="#f44336" />
-    </TouchableOpacity>
-  );
 
   return (
     <View style={styles.container}>
       <Text style={styles.header}>История</Text>
 
-      {/* Смена недели */}
-      <View style={styles.weekContainer}>
-        <TouchableOpacity onPress={prevWeek}>
-          <Ionicons name="chevron-back-outline" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.weekText}>{formatWeek(currentWeek)}</Text>
-        <TouchableOpacity onPress={nextWeek}>
-          <Ionicons name="chevron-forward-outline" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+      {data.length === 0 ? (
+        <Text style={styles.empty}>Нет принятых лекарств</Text>
+      ) : (
+        <FlatList
+          data={data}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingBottom: 20 }}
+        />
+      )}
 
-      {/* "+ Прием по мере необходимости" */}
-      <TouchableOpacity style={styles.asNeededButton} onPress={openAsNeededModal}>
-        <Text style={styles.asNeededText}>+ Прием по мере необходимости</Text>
-      </TouchableOpacity>
-
-      {/* Список */}
-      <FlatList
-        data={data}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
-
-      {/* Модальное окно редактирования */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
+      {/* Модальное окно */}
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={closeModal}>
         <View style={styles.modalBackground}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalHeader}>{selectedMedication?.name}</Text>
+            <Text style={styles.modalTitle}>{selectedMedication?.title}</Text>
+            <Text style={styles.modalSubtitle}>Изменить статус:</Text>
+
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: "#4caf50" }]}
-              onPress={() => setModalVisible(false)}
+              style={[
+                styles.statusButton,
+                selectedMedication?.status === "taken" && styles.activeTaken,
+              ]}
+              onPress={() => updateStatus("taken")}
             >
-              <Text style={styles.modalButtonText}>Принято</Text>
+              <Text
+                style={[
+                  styles.statusButtonText,
+                  selectedMedication?.status === "taken" && styles.activeText,
+                ]}
+              >
+                Принято
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: "#f44336" }]}
-              onPress={() => setModalVisible(false)}
+              style={[
+                styles.statusButton,
+                selectedMedication?.status === "missed" && styles.activeMissed,
+              ]}
+              onPress={() => updateStatus("missed")}
             >
-              <Text style={styles.modalButtonText}>Пропущено</Text>
+              <Text
+                style={[
+                  styles.statusButtonText,
+                  selectedMedication?.status === "missed" && styles.activeText,
+                ]}
+              >
+                Пропущено
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: "#ccc" }]}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={[styles.modalButtonText, { color: "#333" }]}>Отмена</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Модальное окно "Прием по мере необходимости" */}
-      <Modal
-        visible={asNeededModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAsNeededModalVisible(false)}
-      >
-        <View style={styles.modalBackground}>
-          <View style={[styles.modalContainer, { maxHeight: "70%" }]}>
-            <Text style={styles.modalHeader}>Выберите лекарство</Text>
-            <FlatList
-              data={data}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.medSelectItem}
-                  onPress={() => selectMedication(item)}
-                >
-                  <Ionicons
-                    name={item.icon as any}
-                    size={28}
-                    color="#4a90e2"
-                    style={{ marginRight: 12 }}
-                  />
-                  <Text style={styles.name}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-            <TouchableOpacity
-              style={[styles.modalButton, { backgroundColor: "#ccc", marginTop: 12 }]}
-              onPress={() => setAsNeededModalVisible(false)}
-            >
-              <Text style={[styles.modalButtonText, { color: "#333" }]}>Отмена</Text>
+            <TouchableOpacity onPress={closeModal} style={{ marginTop: 20 }}>
+              <Text style={{ color: "#4a90e2" }}>Закрыть</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -171,28 +163,11 @@ export default function History() {
   );
 }
 
+/** ======== Стили ======== */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f9f9f9", padding: 16, paddingTop: 80 },
-  header: { color: "#333", fontSize: 32, fontWeight: "bold", marginBottom: 16 },
-  weekContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "#e0e0e0",
-    marginBottom: 16,
-  },
-  weekText: { color: "#333", fontSize: 16, fontWeight: "500" },
-  asNeededButton: {
-    backgroundColor: "#fff",
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#f44336",
-    marginBottom: 16,
-  },
-  asNeededText: { color: "#f44336", fontWeight: "600", textAlign: "center" },
+  container: { flex: 1, padding: 16, paddingTop: 80, backgroundColor: "#f9f9f9" },
+  header: { fontSize: 32, fontWeight: "bold", marginBottom: 16 },
+  empty: { textAlign: "center", marginTop: 100, color: "#777", fontSize: 18 },
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -207,28 +182,23 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   icon: { marginRight: 12 },
-  name: { color: "#333", fontSize: 16, fontWeight: "600" },
-  time: { color: "#666", fontSize: 14, marginTop: 2 },
-  modalBackground: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
+  name: { fontSize: 16, fontWeight: "600", color: "#333" },
+  time: { fontSize: 14, color: "#666", marginTop: 2 },
+  modalBackground: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalContainer: { width: "85%", backgroundColor: "#fff", borderRadius: 16, padding: 20, alignItems: "center" },
+  modalTitle: { fontSize: 22, fontWeight: "bold", marginBottom: 12 },
+  modalSubtitle: { fontSize: 16, marginBottom: 20 },
+  statusButton: {
+    backgroundColor: "#e0e0e0",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+    marginTop: 8,
+    width: 200,
     alignItems: "center",
   },
-  modalContainer: {
-    width: "80%",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-  },
-  modalHeader: { fontSize: 20, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
-  modalButton: { paddingVertical: 12, borderRadius: 8, marginBottom: 12, alignItems: "center" },
-  modalButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  medSelectItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    borderBottomColor: "#eee",
-    borderBottomWidth: 1,
-  },
+  statusButtonText: { fontSize: 16, fontWeight: "600", color: "#333" },
+  activeTaken: { backgroundColor: "#4caf50" },
+  activeMissed: { backgroundColor: "#f44336" },
+  activeText: { color: "#fff" },
 });
