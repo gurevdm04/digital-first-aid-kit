@@ -1,5 +1,5 @@
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,11 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import * as Notifications from "expo-notifications";
 import MedicationCard from "@/components/MedicationCard";
 import { ICON_MAP } from "@/constants/ICON_MAP";
+
+type RepeatType = "none" | "day" | "hour"; // тип повтора
 
 type Medication = {
   id: string;
@@ -24,13 +27,86 @@ type Medication = {
   interval?: string;
   color?: string;
   iconId: string;
+  repeatInterval?: RepeatType; // новый параметр
   status?: "pending" | "taken" | "missed";
+  notificationId?: string;
 };
 
 export default function Index() {
   const [data, setData] = useState<Medication[]>([]);
   const [selectedItem, setSelectedItem] = useState<Medication | null>(null);
   const [fadeAnim] = useState(new Animated.Value(0));
+
+  /** ======== Настройка уведомлений ======== */
+  useEffect(() => {
+    (async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Разрешите уведомления", "Чтобы получать напоминания о приёме лекарств");
+      }
+
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        }),
+      });
+    })();
+  }, []);
+
+  /** ======== Планирование уведомлений ======== */
+  /** === Планирование уведомления === */
+  const scheduleMedicineNotification = async (med: Medication) => {
+    try {
+      const triggerDate = new Date(med.startDate);
+      if (triggerDate < new Date()) return;
+
+      let trigger: Notifications.NotificationTriggerInput;
+
+      // Ежедневное повторение
+      if (med.repeatInterval === "day") {
+        trigger = {
+          type: "daily",
+          hour: triggerDate.getHours(),
+          minute: triggerDate.getMinutes(),
+        };
+      }
+      // Повтор каждый час
+      else if (med.repeatInterval === "hour") {
+        trigger = {
+          type: "timeInterval",
+          seconds: 60 * 60,
+          repeats: true,
+        };
+      }
+      // Один раз
+      else {
+        trigger = {
+          type: "date",
+          date: triggerDate,
+          repeats: false,
+        };
+      }
+
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "💊 Время принять лекарство",
+          body: `Пора принять: ${med.title}`,
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger,
+      });
+
+      med.notificationId = id;
+      return id;
+    } catch (e) {
+      console.error("Ошибка уведомления:", e);
+    }
+  };
 
   /** ======== Загрузка данных ======== */
   const loadMedicines = async () => {
@@ -49,27 +125,34 @@ export default function Index() {
         );
       });
 
-      const updated = todayMeds.map((m) => {
-        const medTime = new Date(m.startDate);
-        if (m.status === "taken") return m;
-        if (medTime < now && m.status !== "taken") return { ...m, status: "missed" };
-        return { ...m, status: "pending" };
-      });
+      const updated = await Promise.all(
+        todayMeds.map(async (m) => {
+          const medTime = new Date(m.startDate);
+          if (m.status === "taken") return m;
+          if (medTime < now && m.status !== "taken") return { ...m, status: "missed" };
+          if (!m.notificationId) {
+            const id = await scheduleMedicineNotification(m);
+            return { ...m, notificationId: id, status: "pending" };
+          }
+          return { ...m, status: "pending" };
+        })
+      );
 
       setData(updated);
+      await AsyncStorage.setItem("medicines", JSON.stringify(updated));
     } catch (e) {
       console.error(e);
     }
   };
 
-  /** ======== Перерендер при возврате на экран ======== */
+  /** ======== Перерендер при возврате ======== */
   useFocusEffect(
     useCallback(() => {
       loadMedicines();
     }, [])
   );
 
-  // Оставляем остальные функции без изменений
+  /** ======== Метки времени ======== */
   const getTimeLabel = (startDate: string, status?: string) => {
     const now = new Date();
     const medTime = new Date(startDate);
@@ -84,6 +167,7 @@ export default function Index() {
     return `Через ${hours} ч ${mins} мин`;
   };
 
+  /** ======== Модалка ======== */
   const openModal = (item: Medication) => {
     setSelectedItem(item);
     Animated.timing(fadeAnim, {
@@ -101,6 +185,7 @@ export default function Index() {
     }).start(() => setSelectedItem(null));
   };
 
+  /** ======== Обновление статуса ======== */
   const updateStatus = async (status: "taken" | "missed") => {
     if (!selectedItem) return;
     try {
@@ -108,6 +193,14 @@ export default function Index() {
       if (!saved) return;
       const meds: Medication[] = JSON.parse(saved);
       const updated = meds.map((m) => (m.id === selectedItem.id ? { ...m, status } : m));
+
+      // Если повторное лекарство — уведомление не удаляем
+      if (status === "taken" && selectedItem.repeatInterval === "none") {
+        if (selectedItem.notificationId) {
+          await Notifications.cancelScheduledNotificationAsync(selectedItem.notificationId);
+        }
+      }
+
       await AsyncStorage.setItem("medicines", JSON.stringify(updated));
       Alert.alert("✅", `Лекарство отмечено как "${status === "taken" ? "Принято" : "Пропущено"}"`);
       closeModal();
@@ -117,6 +210,7 @@ export default function Index() {
     }
   };
 
+  /** ======== Отображение ======== */
   const renderItem = ({ item }: { item: Medication }) => {
     const timeLabel = getTimeLabel(item.startDate, item.status);
     return (
@@ -146,6 +240,7 @@ export default function Index() {
         />
       )}
 
+      {/* ======== Модальное окно ======== */}
       <Modal transparent visible={!!selectedItem} animationType="fade">
         <Animated.View style={[styles.modalBackground, { opacity: fadeAnim }]}>
           <View style={styles.modalContainer}>

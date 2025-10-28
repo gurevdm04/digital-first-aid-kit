@@ -27,10 +27,13 @@ const ICON_OPTIONS = [
 const COLOR_OPTIONS = ["#4a90e2", "#f5a623", "#50e3c2", "#e94e77", "#9013fe"];
 
 export default function AddMedication() {
+  const now = new Date();
+  now.setSeconds(0, 0); // секунды всегда 00
+
   const [name, setName] = useState("");
   const [dose, setDose] = useState("");
-  const [startDate, setStartDate] = useState(new Date());
-  const [tempDate, setTempDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(now);
+  const [tempDate, setTempDate] = useState(now);
   const [showDateModal, setShowDateModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -77,14 +80,16 @@ export default function AddMedication() {
 
       Alert.alert("✅ Успешно", "Лекарство добавлено");
 
-      // ✅ Очистка всех полей
+      // Очистка всех полей
       setName("");
       setDose("");
       setDays("");
       setInterval(INTERVAL_OPTIONS[0]);
       setSelectedColor(COLOR_OPTIONS[0]);
       setSelectedIcon(ICON_OPTIONS[0]);
-      setStartDate(new Date());
+      const resetDate = new Date();
+      resetDate.setSeconds(0, 0);
+      setStartDate(resetDate);
 
       router.push("/medicines");
     } catch (e) {
@@ -106,7 +111,9 @@ export default function AddMedication() {
   const onChangeDate = (event: DateTimePickerEvent, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
-      setStartDate(selectedDate);
+      const newDate = new Date(selectedDate);
+      newDate.setSeconds(0, 0); // секунды всегда 00
+      setStartDate(newDate);
       setShowTimePicker(true);
     }
   };
@@ -115,13 +122,15 @@ export default function AddMedication() {
     setShowTimePicker(false);
     if (selectedTime) {
       const newDate = new Date(startDate);
-      newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes());
+      newDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0); // секунды всегда 00
       setStartDate(newDate);
     }
   };
 
   const confirmDateIOS = () => {
-    setStartDate(tempDate);
+    const newDate = new Date(tempDate);
+    newDate.setSeconds(0, 0); // секунды всегда 00
+    setStartDate(newDate);
     setShowDateModal(false);
   };
 

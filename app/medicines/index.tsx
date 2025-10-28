@@ -87,6 +87,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f1f1f1",
     borderRadius: 12,
     overflow: "hidden",
+    marginBottom: 80,
   },
   separator: {
     height: 1,
